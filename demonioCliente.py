@@ -6,15 +6,10 @@ import time
 from daemon import runner
 import os
 import sys
-import dbf
-import datetime
-from rutinas.varias import *
-import zmq
 import ConfigParser
-import urllib
-import urllib2
+from lib.consultaDT import consultaParalelo, notificar
 
-class smsCitas():
+class smsToday():
     def __init__(self):
 
         self.nombreArchivoConf = 'dt.cfg'
@@ -81,61 +76,23 @@ class smsCitas():
         respuesta = response.read()
         return respuesta
 
-    def enviarSocket(self, registros, campoTabla):
-        '''Parametros 2: (tupla, string):
-        (Registros, "String:Nombre del Campo de la Tabla que se actualizara")
-
-        Este Metodo recorre una lista de las personas que se le enviara el
-        mensaje SMS de Cita Nueva, Recordatorio o Cita Cancelada para
-        luego enviarla via ip por Socket a (el o los) Servidores serverZMQ
-        NOTA: Cuando se envia al ServidorZMQ este devuelve mediante self.socket.recv()
-        ('1') si todo salio bien o ('0') en caso de fallar'''
-
-        pg = ConectarPG(self.cadconex)
-
-        for fila in registros:
-            id, numero, mensaje = fila
-            msg = '{0}^{1}'.format(numero, mensaje)
-
-            #Se extrae y muestra en el .log solo una parte del mensaje
-            self.logger.info(msg[:100])
-
-            noEnviado = self.enviarWebService(numero, mensaje)
-            nombreServidor = 'http://10.121.6.12/mensaje'
-
-            # Antes el nombre del servidor lo devolvia self.socket.recv() ahora no
-            #self.logger.info(noEnviado)
-
-            if int(noEnviado):
-                #POSTGRES
-                cad_update = "update med_citas_consulta set %s =\
-                    '%s' where id = %s" % \
-                    (campoTabla, datetime.datetime.now().strftime('%Y-%m-%d %I:%M:%S'), id)
-                try:
-                    pg.ejecutar(cad_update)
-                    pg.conn.commit()
-                except:
-                    logger.error('Ocurrio un error al momento de actualizar la tabla')
-                time.sleep(self.tiempo)
-                # FIN POSTGRES
-            else:
-                self.logger.warn('Houston Tenemos un Problema con el ID:{0},\
-                    no se pudo enviar el SMS dede el Servidor {1}'.format(id, nombreServidor))
-
-        pg.cur.close()
-        pg.conn.close()
 
     def hoy(self):
         '''Metodo que permite procesar y enviar sms a los pacientes que
         han tomado citas nuevas'''
 
+        num = '04165602966'
+        msg = 'El precio cambio'
+
         self.logger.info('Proceso Iniciado <Citas Nuevas>')
-        r = self.consultarCitasNuevas()
-        final = self.procesarCitas(r, 'nuevas')
-        self.enviarSocket(final, 'sms_fecha_cita_nueva')
+        # Aqui buscar en una base de datos el precio del dolar guardado
+        # valorAnterior = buscarPrecioAnterior()
+        valorNuevo, fecha = consultaParalelo()
+        if valorNuevo != valorAnterior:
+            notificar(numero, mensaje)
+
         self.logger.info('Proceso Terminado <Citas Nuevas>')
         return True
-
 
     def run(self):
         ''' Este metodo es el que permite ejecutar el hilo del demonio'''
@@ -158,7 +115,7 @@ class smsCitas():
             time.sleep(60)
 
 #Instancio la Clase
-app = smsCitas()
+app = smsToday()
 handler = app.configLog()
 daemon_runner = runner.DaemonRunner(app)
 
